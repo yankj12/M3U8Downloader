@@ -33,9 +33,24 @@ public class M3U8Downloader {
 		String m3u8Url = "";
     	
 		// 当前应用处理的数据、中间结果、最终结果的根目录
+		// workRootDirName目录下面包含3个目录：
+		// m3u8存放m3u8文件
+		// ts存放ts文件
+		// mp4存放合并后的mp4文件
 		String workRootDirName = "";
 		
-		
+		// 下载m3u8文件
+		downloadM3U8(m3u8Url, workRootDirName);
+	}
+
+	/**
+	 * 下载m3u8文件到本地文件夹
+	 * 
+	 * @param m3u8Url
+	 * @param workRootDirName
+	 * @throws Exception
+	 */
+	public static void downloadM3U8(String m3u8Url, String workRootDirName) throws Exception {
 		File workRootDir = new File(workRootDirName);
 		// 如果文件夹不存在创建文件夹
 		if(!workRootDir.exists()) {
@@ -126,46 +141,15 @@ public class M3U8Downloader {
     	
     	System.out.println("下载[" + fileName + "]结束");
 	}
-
 	
-	public static void mergeTsFile(String workRootDir, String fileName, List<File> tsFiles) throws Exception {
-//		String workRootDir = "D:\\workspaces\\pycharm_workspace\\m3u8_down";
-//		String fileName = "mlGnfcu";
-		
-//		String tsDirName = workRootDir + "\\" + fileName + "\\ts";
-//		File dir = new File(tsDirName);
-//		
-//		File[] files = dir.listFiles();
-		// TODO 将文件根据文件后缀中的数字进行排序
-		
-		
-		File mp4File = new File(workRootDir + "\\" + fileName + "\\mp4\\" + fileName + ".mp4");
-		
-		if(!mp4File.exists()) {
-			mp4File.createNewFile();
-		}
-		FileOutputStream fileOutputStream = new FileOutputStream(mp4File);
-		
-		if(tsFiles != null) {
-			for(File tmpFile : tsFiles) {
-				FileInputStream fileInputStream = new FileInputStream(tmpFile);
-				
-				// 文件的大小单位是byte, 1k = 1024byte
-				//System.out.println(fileInputStream.available());
-				int len = 0;
-				int size = 1024 * 1024;
-				byte[] bytes = new byte[size];
-				while((len = fileInputStream.read(bytes)) != -1) {
-					fileOutputStream.write(bytes, 0, len);
-				}
-				
-				fileInputStream.close();
-			}
-		}
-		fileOutputStream.close();
-	}
-	
-	
+	/**
+	 * 根据ts文件的url下载ts文件
+	 * @param url
+	 * @param header
+	 * @param outFile
+	 * @return
+	 * @throws Exception
+	 */
 	public static String downloadTsFile(String  url, Map<String, String> header, File outFile) throws Exception {
         String result = "";
         CloseableHttpClient httpClient = null;
@@ -219,4 +203,41 @@ public class M3U8Downloader {
         }
         return result;
     }
+	
+	/**
+	 * 将多个ts文件合并为一个mp4文件
+	 * 
+	 * @param workRootDir
+	 * @param fileName mp4文件的文件名（不带后缀名）
+	 * @param tsFiles 按顺序排列好的ts文件
+	 * @throws Exception
+	 */
+	public static void mergeTsFile(String workRootDir, String fileName, List<File> tsFiles) throws Exception {
+		
+		File mp4File = new File(workRootDir + "\\" + fileName + "\\mp4\\" + fileName + ".mp4");
+		
+		if(!mp4File.exists()) {
+			mp4File.createNewFile();
+		}
+		FileOutputStream fileOutputStream = new FileOutputStream(mp4File);
+		
+		if(tsFiles != null) {
+			for(File tmpFile : tsFiles) {
+				FileInputStream fileInputStream = new FileInputStream(tmpFile);
+				
+				// 文件的大小单位是byte, 1k = 1024byte
+				//System.out.println(fileInputStream.available());
+				int len = 0;
+				int size = 1024 * 1024;
+				byte[] bytes = new byte[size];
+				while((len = fileInputStream.read(bytes)) != -1) {
+					fileOutputStream.write(bytes, 0, len);
+				}
+				
+				fileInputStream.close();
+			}
+		}
+		fileOutputStream.close();
+	}
+	
 }
