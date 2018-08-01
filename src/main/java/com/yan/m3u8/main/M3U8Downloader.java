@@ -3,10 +3,12 @@ package com.yan.m3u8.main;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
+import java.io.IOException;
 import java.io.InputStream;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CountDownLatch;
 
 import org.apache.http.HttpEntity;
 import org.apache.http.HttpResponse;
@@ -39,8 +41,11 @@ public class M3U8Downloader {
 		// mp4存放合并后的mp4文件
 		String workRootDirName = "";
 		
+		// 下载线程数目
+		int downloadThreadNum = 5;
+		
 		// 下载m3u8文件
-		downloadM3U8(m3u8Url, workRootDirName);
+		downloadM3U8(m3u8Url, workRootDirName, downloadThreadNum);
 	}
 
 	/**
@@ -48,9 +53,10 @@ public class M3U8Downloader {
 	 * 
 	 * @param m3u8Url
 	 * @param workRootDirName
+	 * @param downloadThreadNum 下载线程数目
 	 * @throws Exception
 	 */
-	public static void downloadM3U8(String m3u8Url, String workRootDirName) throws Exception {
+	public static void downloadM3U8(String m3u8Url, String workRootDirName, int downloadThreadNum) throws Exception {
 		File workRootDir = new File(workRootDirName);
 		// 如果文件夹不存在创建文件夹
 		if(!workRootDir.exists()) {
@@ -113,12 +119,23 @@ public class M3U8Downloader {
     		}
     	}
     	
+    	// 定义一个闭锁
+    	CountDownLatch countDownLatch = new CountDownLatch(tsFileNames.size());
+    	// 创建下载线程
+    	List<TsFileDownloadThread> tsFileDownloadThreads = new ArrayList<>();
+    	for(int i=0;i<downloadThreadNum;i++) {
+    		TsFileDownloadThread tsFileDownloadThread = new TsFileDownloadThread(i, workRootDirName, fileName, countDownLatch);
+    		tsFileDownloadThreads.add(tsFileDownloadThread);
+    	}
+    	
+    	
     	// 下载ts文件
-    	// ts文件的url集合
-    	List<String> tsFileUrls = new ArrayList<>();
     	// 下载好的ts文件的集合
     	List<File> tsFiles = new ArrayList<>();
-    	for(String tsFileName:tsFileNames) {
+    	
+    	for(int i=0;i<tsFileNames.size();i++) {
+    		String tsFileName = tsFileNames.get(i);
+    		
     		String tsFileUrl = urlPre + tsFileName;
     		String fsFileFullName = workRootDirName + "\\" + fileName + "\\ts\\" + tsFileName;
     		File tsFile = new File(fsFileFullName);
@@ -127,13 +144,22 @@ public class M3U8Downloader {
     		}
     		
     		//System.out.println(tsFileUrl);
-    		tsFileUrls.add(tsFileUrl);
-    		tsFiles.add(tsFile);
+    		// 将ts文件的url分别添加到几个下载线程当中
+    		int serialNo = i%downloadThreadNum;
+    		TsFileDownloadThread tsFileDownloadThread = tsFileDownloadThreads.get(serialNo);
+    		tsFileDownloadThread.addTsFileUrl(tsFileUrl);
     		
-    		System.out.println("下载ts文件:" + tsFileName);
-    		// 下载ts文件
-    		downloadTsFile(tsFileUrl, null, tsFile);
+    		// 按照顺序收集tsFile的名称，避免后续合并ts文件顺序错乱
+    		tsFiles.add(tsFile);
     	}
+    	
+    	// 启动下载ts文件的线程
+    	for(TsFileDownloadThread tsFileDownloadThread:tsFileDownloadThreads) {
+    		tsFileDownloadThread.start();
+    	}
+    	
+    	// 等待下载线程下载结束，进行合并
+    	countDownLatch.await();
     	
     	System.out.println("开始合并ts文件为一个mp4文件");
     	// 合并ts文件为一个mp4文件，需要注意ts文件的顺序
@@ -238,6 +264,74 @@ public class M3U8Downloader {
 			}
 		}
 		fileOutputStream.close();
+	}
+	
+}
+
+/**
+ * 下载ts文件的线程
+ * @author Yan
+ *
+ */
+class TsFileDownloadThread extends Thread{
+
+	private int serialNo;
+	
+	// 闭锁，用于下载ts线程和合并ts文件线程之间通信
+	private CountDownLatch countDownLatch;
+	
+	private String workRootDirName;
+	
+	// 是要通过m3u8下载的文件的名称（不带后缀名的名称），不是ts文件的名称
+	private String fileName;
+	
+	// 待下载的ts文件url
+	private List<String> tsFileUrls;
+	
+	public TsFileDownloadThread(int serialNo, String workRootDirName, String fileName, CountDownLatch countDownLatch) {
+		this.serialNo = serialNo;
+		this.workRootDirName = workRootDirName;
+		this.fileName = fileName;
+		this.countDownLatch = countDownLatch;
+		this.tsFileUrls = new ArrayList<>();
+	}
+
+	public void addTsFileUrl(String tsFileUrl) {
+		this.tsFileUrls.add(tsFileUrl);
+	}
+	
+	@Override
+	public void run() {
+		if(tsFileUrls != null) {
+			for(String tsFileUrl : tsFileUrls) {
+				
+				// 从url中截取ts文件的名称
+				int index = tsFileUrl.lastIndexOf("/");
+				String tsFileName = tsFileUrl.substring(index + 1);
+				
+				// ts文件在本地的全路径名
+				String fsFileFullName = workRootDirName + "\\" + fileName + "\\ts\\" + tsFileName;
+	    		File tsFile = new File(fsFileFullName);
+	    		// 如果ts文件在本地不存在，则创建
+	    		if(!tsFile.exists()) {
+	    			try {
+						tsFile.createNewFile();
+					} catch (IOException e) {
+						e.printStackTrace();
+					}
+	    		}
+	    		
+	    		// 下载ts文件
+	    		try {
+					M3U8Downloader.downloadTsFile(tsFileUrl, null, tsFile);
+					System.out.println("TsFileDownloadThread-" + this.serialNo + ",下载ts文件结束:" + tsFileName);
+				} catch (Exception e) {
+					e.printStackTrace();
+				}
+	    		// 下载完ts文件要将计数器减一
+	    		countDownLatch.countDown();
+			}
+		}
 	}
 	
 }
