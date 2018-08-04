@@ -1,10 +1,14 @@
 package com.yan.m3u8.main;
 
+import java.io.BufferedReader;
 import java.io.File;
+import java.io.FileFilter;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
+import java.io.FileReader;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.Reader;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -46,10 +50,109 @@ public class M3U8Downloader {
 		
 		// 下载m3u8文件
 		downloadM3U8(m3u8Url, workRootDirName, downloadThreadNum);
+		
+		// 合并根目录下所有的m3u8
+//		mergeLocalTsFilesInWorkRootDir(workRootDirName);
+		
 	}
 
 	/**
-	 * 下载m3u8文件到本地文件夹
+	 * 将workRoot文件夹下面所有的ts文件分别合并成mp4文件
+	 * 
+	 * @param workRootDirName
+	 * @throws Exception 
+	 */
+	public static void mergeLocalTsFilesInWorkRootDir(String workRootDirName) throws Exception {
+		File workRootDir = new File(workRootDirName);
+		// 先从workRoot中读取文件夹，文件夹名即为fileName
+		File[] fileDirs = workRootDir.listFiles(new FileFilter() {
+			// 列出其中的文件夹
+			public boolean accept(File pathname) {
+				return pathname.isDirectory() && !pathname.getName().startsWith(".");
+			}
+		});
+		
+		if(fileDirs != null && fileDirs.length > 0) {
+			// 序号，用于展示当前处理进度
+			int index = 1;
+			for(File fileDir:fileDirs) {
+				String fileName = fileDir.getName();
+				System.out.println("正在处理[" + fileName + "]，" + index + "/" + fileDirs.length);
+				
+				// m3u8文件
+				String m3u8FileName = workRootDirName + "\\" + fileName + "\\m3u8\\" + fileName + ".m3u8";
+				// ts文件的文件夹
+				// 存放ts临时文件的地方
+				String tsDirName = workRootDirName + "\\" + fileName + "\\ts";
+				
+				// 从m3u8文件中读取ts文件名（m3u8文件中文件名是排好序的）
+				List<File> tsFiles = readSortedTsFilesFromM3U8File(m3u8FileName, tsDirName);
+				
+				// 合并ts文件
+				mergeTsFile(workRootDirName, fileName, tsFiles);
+				
+				index++;
+			}
+		}
+	}
+	
+	/**
+	 * 从m3u8文件中读取出有序的ts文件列表
+	 * 
+	 * @param m3u8FileName m3u8文件
+	 * @param tsDirName ts文件的文件夹
+	 * @return
+	 */
+	private static List<File> readSortedTsFilesFromM3U8File(String m3u8FileName, String tsDirName){
+		List<File> tsFiles = new ArrayList<>();
+		File m3u8File = new File(m3u8FileName);
+		Reader fileReader = null;
+		
+		BufferedReader bufferedReader = null;
+		
+		try {
+			fileReader = new FileReader(m3u8File);
+			bufferedReader = new BufferedReader(fileReader);
+			
+			String line = null;
+			while((line = bufferedReader.readLine())!= null) {
+				if(!line.startsWith("#")) {
+					String tsFileName = tsDirName + "\\" + line;
+					//System.out.println(tsFileName);
+					File tsFile = new File(tsFileName);
+					tsFiles.add(tsFile);
+				}
+			}
+		} catch (Exception e) {
+			e.printStackTrace();
+		} finally {
+			// 关闭流
+			if(bufferedReader != null) {
+				try {
+					bufferedReader.close();
+				} catch (IOException e) {
+					e.printStackTrace();
+				}
+			}
+			
+			if(fileReader != null) {
+				try {
+					fileReader.close();
+				} catch (IOException e) {
+					e.printStackTrace();
+				}
+			}
+		}
+		
+		if(tsFiles.size() == 0) {
+			tsFiles = null;
+		}
+		
+		return tsFiles;
+	}
+	
+	/**
+	 * 下载m3u8文件到本地文件夹，并且将ts文件合并为mp4文件
 	 * 
 	 * @param m3u8Url
 	 * @param workRootDirName
